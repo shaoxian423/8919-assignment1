@@ -21,7 +21,7 @@ app.secret_key = env.get("APP_SECRET_KEY")
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]  # 确保日志输出到 stdout
+    handlers=[logging.StreamHandler()]
 )
 logger = app.logger
 
@@ -84,9 +84,5 @@ def protected():
     log_event("protected_route_access", user_id=userinfo.get("sub", "unknown"), email=userinfo.get("email", "unknown"), path=request.path)
     return render_template("protected.html", user=userinfo)
 
-# WSGI 入口点（Azure 需要）
-application = app  # 暴露 app 给 WSGI 服务器
-
-# 移除 app.run()，Azure 会通过 gunicorn 调用
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=env.get("PORT", 3000), debug=True)  # 仅用于本地测试
+    app.run(host="0.0.0.0", port=env.get("PORT", 3000))
