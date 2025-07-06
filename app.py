@@ -8,26 +8,26 @@ from authlib.integrations.flask_client import OAuth
 from dotenv import find_dotenv, load_dotenv
 from flask import Flask, redirect, render_template, session, url_for, request
 from functools import wraps
-import sys  # 修复：导入 sys 模块
+import sys  # Ensure sys module is imported
 
-# 加载环境变量
+# Load environment variables
 ENV_FILE = find_dotenv()
 if ENV_FILE:
     load_dotenv(ENV_FILE)
 
 app = Flask(__name__)
-app.secret_key = env.get("APP_SECRET_KEY") or "default-secret-key"  # 默认值用于开发
+app.secret_key = env.get("APP_SECRET_KEY") or "default-secret-key"  # Default value for development
 
-# 配置日志，参考 Lab 2 的 stdout 输出
+# Configure logging, output to stdout for Azure compatibility
 logging.basicConfig(stream=sys.stdout, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# 验证环境变量
-if not all([env.get("AUTH0_DOMAIN"), env.get("AUTH0_CLIENT_ID"), env.get("AUTH0_CLIENT_SECRET")]):
-    logger.error("Startup error: Missing Auth0 environment variables")
-    raise ValueError("Missing required Auth0 environment variables")
+# Validate environment variables
+if not all([env.get("AUTH0_DOMAIN"), env.get("AUTH0_CLIENT_ID"), env.get("AUTH0_CLIENT_SECRET"), env.get("APP_SECRET_KEY")]):
+    logger.error("Startup error: Missing required environment variables")
+    raise ValueError("Missing required environment variables: AUTH0_DOMAIN, AUTH0_CLIENT_ID, AUTH0_CLIENT_SECRET, or APP_SECRET_KEY")
 
-# 配置 Auth0
+# Configure Auth0
 oauth = OAuth(app)
 oauth.register(
     "auth0",
@@ -37,7 +37,7 @@ oauth.register(
     server_metadata_url=f'https://{env.get("AUTH0_DOMAIN")}/.well-known/openid-configuration',
 )
 
-# 通用日志函数，生成结构化 JSON
+# General logging function to emit structured JSON logs
 def log_event(event_type, **kwargs):
     log_data = {"event": event_type, "timestamp": datetime.utcnow().isoformat(), "ip_address": request.remote_addr, **kwargs}
     level = logging.INFO if event_type not in ["unauthorized_access", "login_failed"] else logging.WARNING
@@ -53,6 +53,8 @@ def login():
         return oauth.auth0.authorize_redirect(redirect_uri=url_for("callback", _external=True))
     except Exception as e:
         log_event("login_error", error=str(e), path=request.path)
+        if "invalid_redirect_uri" in str(e).lower():
+            return "Invalid callback URL configured", 500
         return "Login initiation failed", 500
 
 @app.route("/callback", methods=["GET", "POST"])
@@ -64,8 +66,12 @@ def callback():
         log_event("user_login", user_id=userinfo.get("sub", "unknown"), email=userinfo.get("email", "unknown"))
         return redirect("/")
     except Exception as e:
-        log_event("login_failed", user_id="unknown", email="unknown", error=str(e), path=request.path)
-        return redirect(url_for("home", error="Login failed: " + str(e)))
+        error_msg = str(e)
+        if "mismatching_state" in error_msg.lower():
+            log_event("login_failed", user_id="unknown", email="unknown", error="CSRF state mismatch", path=request.path)
+        else:
+            log_event("login_failed", user_id="unknown", email="unknown", error=error_msg, path=request.path)
+        return redirect(url_for("home", error="Login failed: " + error_msg))
 
 @app.route("/logout")
 def logout():
@@ -90,8 +96,8 @@ def protected():
     log_event("protected_route_access", user_id=userinfo.get("sub", "unknown"), email=userinfo.get("email", "unknown"), path=request.path)
     return render_template("protected.html", user=userinfo)
 
-# WSGI 入口点（Azure 需要）
-application = app  # 暴露 app 给 WSGI 服务器
+# WSGI entry point (required for Azure)
+application = app  # Expose app to WSGI server
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=env.get("PORT", 3000))  # 仅用于本地测试
+    app.run(host="0.0.0.0", port=env.get("PORT", 3000))  # Only for local testing
