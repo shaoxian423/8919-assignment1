@@ -1,6 +1,12 @@
 
 # Azure Auth0 Flask Setup
 
+## 🎥 Video Demonstration
+
+[![Watch the video](https://img.youtube.com/vi/S-MBQgTe8c8/hqdefault.jpg)](https://www.youtube.com/watch?v=B4SgXNXt4tg)
+
+Click the image above or [watch the demo on YouTube](https://www.youtube.com/watch?v=B4SgXNXt4tg).
+
 ## ⚙️ Setup and Deployment Instructions
 
 ### 0. Sign Up for Auth0
