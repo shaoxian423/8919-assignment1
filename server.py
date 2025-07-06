@@ -8,6 +8,7 @@ from authlib.integrations.flask_client import OAuth
 from dotenv import find_dotenv, load_dotenv
 from flask import Flask, redirect, render_template, session, url_for, request
 from functools import wraps
+import sys  # 修复：导入 sys 模块
 
 # 加载环境变量
 ENV_FILE = find_dotenv()
@@ -15,15 +16,16 @@ if ENV_FILE:
     load_dotenv(ENV_FILE)
 
 app = Flask(__name__)
-app.secret_key = env.get("APP_SECRET_KEY")
+app.secret_key = env.get("APP_SECRET_KEY") or "default-secret-key"  # 默认值用于开发
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]  # 确保日志输出到 stdout
-)
-logger = app.logger
+# 配置日志，参考 Lab 2 的 stdout 输出
+logging.basicConfig(stream=sys.stdout, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# 验证环境变量
+if not all([env.get("AUTH0_DOMAIN"), env.get("AUTH0_CLIENT_ID"), env.get("AUTH0_CLIENT_SECRET")]):
+    logger.error("Startup error: Missing Auth0 environment variables")
+    raise ValueError("Missing required Auth0 environment variables")
 
 # 配置 Auth0
 oauth = OAuth(app)
@@ -35,7 +37,7 @@ oauth.register(
     server_metadata_url=f'https://{env.get("AUTH0_DOMAIN")}/.well-known/openid-configuration',
 )
 
-# 通用日志函数
+# 通用日志函数，生成结构化 JSON
 def log_event(event_type, **kwargs):
     log_data = {"event": event_type, "timestamp": datetime.utcnow().isoformat(), "ip_address": request.remote_addr, **kwargs}
     level = logging.INFO if event_type not in ["unauthorized_access", "login_failed"] else logging.WARNING
@@ -47,7 +49,11 @@ def home():
 
 @app.route("/login")
 def login():
-    return oauth.auth0.authorize_redirect(redirect_uri=url_for("callback", _external=True))
+    try:
+        return oauth.auth0.authorize_redirect(redirect_uri=url_for("callback", _external=True))
+    except Exception as e:
+        log_event("login_error", error=str(e), path=request.path)
+        return "Login initiation failed", 500
 
 @app.route("/callback", methods=["GET", "POST"])
 def callback():
@@ -87,6 +93,5 @@ def protected():
 # WSGI 入口点（Azure 需要）
 application = app  # 暴露 app 给 WSGI 服务器
 
-# 移除 app.run()，Azure 会通过 gunicorn 调用
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=env.get("PORT", 3000), debug=True)  # 仅用于本地测试
+    app.run(host="0.0.0.0", port=env.get("PORT", 3000))  # 仅用于本地测试
